@@ -40,5 +40,4 @@
 9. [About Me](#about)
 
 ***
-
-![](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/MKlon3.5full.png),![](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/MKlon3.5full.png)
+<p align="center">![](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/MKlon3.5full.png)
