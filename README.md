@@ -362,7 +362,7 @@ MState::MState(MTools * Tools) : Tools(Tools) {}
  [^](#menu)
 
 ***
-## <p align="center">3. Технические характеристики MKlon4.0<a name="specifications"></a>
+## <p align="center">3. Технические характеристики MKlon3.5<a name="specifications"></a>
 
 - Зарядный ток Iз, А _____________________________ 0.05 – 6.0 ±(0.005 Iз + 0.05)
 - Шаг установки зарядного тока, А _____________ 0.01 
