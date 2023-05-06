@@ -379,3 +379,1195 @@ MState::MState(MTools * Tools) : Tools(Tools) {}
 - Защита по выходу _____________________________ переполюсовка, перегрузка по току, КЗ
 
 ***
+# <p align="center">4. FSM <a name="fsm"></a>
+## <p align="center"> Finite State Machine или finite-state machine или конечный автомат, кому как нравится. 
+"Это до предела упрощенная модель компьютера, имеющая конечное число состояний, которая жертвует всеми особенностями компьютеров такие как ОЗУ, постоянная память, устройства ввода-вывода и процессорными ядрами в обмен на простоту понимания, удобство рассуждения и легкость программной или аппаратной реализации." Поверим пока на слово.
+
+### <p align="center"> Об одном способе реализации конечного автомата.
+Идея состоит в том, что реализация каждого режима работы устройства должна производиться независимо от иных режимов, но использовать некий общий инструментарий, обеспечивающий безаварийный доступ к ресурсам прибора. Как говорил великий Х.Д.Милс: "Нахождение глубинной простоты в запутанном клубке сущностей - это и есть творчество в программировании." - не дословно, но близко к источнику. В свое время мне понадобилось не более двух месяцев, чтобы подавить в себе естественное отторжение и привести проект к виду, с которым комфортно и, главное, безопасно работать.
+
+### <p align="center"> Конечный автомат, он же Finite State Mashine (FSM).
+Любой или почти любой процесс можно представить в виде последовательности шагов от одного состояния к другому. Разработчик мало чего стоит, если не представляет себе все возможные состояния, число которых конечно - именно поэтому автомат и называют "конечным". Вдохновением можно запастись [здесь](https://chipenable.ru/index.php/programming-avr/item/90-realizatsiya-konechnogo-avtomata-state-machine.html). Способ несомненно хорош, Но вот синхронизировать данные двух структур... хвост может начать вилять собакой.
+
+Как же будет выглядеть реализация конкретного режима, например простого заряда аккумуляторной батареи? Графически режим такого заряда может быть представлен так: идите от жирной точки вверху, в цветных бланках короткие примечания к состояниям.
+![Заряд CC/CV](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/CC_CV_fsm.jpg)
+Вырисовывается не так уж и много состояний - чуть более десятка. Слева - состояния ввода параметров с возможностью отказа от дальнейшего ввода и перехода на исполнение или выход. Справа - последовательность шагов заряда - подъем тока, удержание тока и удержание напряжения. В центре - состояние отложенного старта. Исходим из того, что этот режим заряда (CC/CV) у нас "в печёнках", у кого нет - представьте, что это алгоритм ёлочной гирлянды. 
+Оформим каждое состояние соответствующим объявлением класса в общем поле имен CcCvFsm. Здесь же можно определить необходимые константы, свойственные для этого режима, чтобы всегда были "под рукой" в структурах, а в классах ничто не мешает определить свои локальные константы и переменные как private:
+
+##### файл cccvfsm.h
+```c++
+#ifndef _CCCVFSM_H_
+#define _CCCVFSM_H_
+
+#include "mstate.h"
+
+namespace CcCvFsm    // Поле имен для режима простого заряда
+{
+  struct MChConsts
+  {
+      // Пределы регулирования
+      static constexpr float i_l =  0.2f;
+      static constexpr float i_h = 12.2f;
+      static constexpr float v_l = 10.0f;
+      static constexpr float v_h = 16.0f;
+  };
+
+  struct MPidConstants
+  {
+      // Параметры регулирования
+      static constexpr float outputMin            = 0.0f;
+      static constexpr float outputMaxFactor      = 1.05f;     // factor for current limit
+  };
+
+  class MStart : public MState
+  {      
+    public:
+      MStart(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MSetCurrentMax : public MState
+  {
+    public:  
+      MSetCurrentMax(MTools * Tools);
+      MState * fsm() override;
+    private:
+        // Пределы регулирования max тока
+      static constexpr float above = 6.0f;
+      static constexpr float below = 0.2f;
+  };
+ 
+  class MSetVoltageMax : public MState
+  {
+    public:  
+      MSetVoltageMax(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MSetCurrentMin : public MState
+  {
+    public:    
+      MSetCurrentMin(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MSetVoltageMin : public MState
+  {
+    public:    
+      MSetVoltageMin(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MPostpone : public MState
+  {
+    public:  
+      MPostpone(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MUpCurrent : public MState
+  {
+    public:  
+      MUpCurrent(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MKeepVmax : public MState
+  {
+    public:
+      MKeepVmax(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MKeepVmin : public MState
+  {
+    public:  
+      MKeepVmin(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MStop : public MState
+  {
+    public: 
+      MStop(MTools * Tools);
+      MState * fsm() override;
+  };
+
+  class MExit : public MState
+  {
+    public:
+      MExit(MTools * Tools);
+      MState * fsm() override;
+  };
+
+};
+
+#endif  // !_CCCVFSM_H_
+```
+Не трудно заметить, что каждое состояние (далее по тексту может именоваться как "шаг") представлено соответствующим классом, а методы единственной функцией fsm() - виртуальной. 
+Классы состояний режима, как и структуры с константами имеют свое поле имен, так что в других режимах могут использоваться те же имена, что, согласитесь, удобно.  А что за классы MState и MTools? Дойдем и до них. А пока оценим самодокументированность кода.
+
+Перейдем к реализации. Определения всех состояний не приводятся, они однотипны. Рассмотрим на примере двух-трёх. Пока обращайте внимание только на содержательную часть, принимая "оболочку" как данность. По возможности используются говорящие имена. О классах достаточно знать лишь основы. Доверьтесь профессионалу - это при мне прямо "из-под волос" выдал программист, до которого нам далеко.
+Честно признаюсь - меня поначалу стошнило))
+ Пока просто скользните взглядом, не вчитывайтесь, ощутите возможность окинуть одним взглядом режим заряда от начала и до конца.
+
+##### файл cccvfsm.cpp
+```c++
+#include "cccvfsm.h"
+#include "mtools.h"
+#include "mboard.h"
+#include "mdisplay.h"
+namespace CcCvFsm
+{
+  // Состояние "Старт", инициализация выбранного режима работы (Заряд CCCV).
+  MStart::MStart(MTools * Tools) : MState(Tools)
+  {
+      // Параметры заряда из энергонезависимой памяти, Занесенные в нее при предыдущих включениях, как и
+      // выбранные ранее номинальные параметры батареи (напряжение, емкость).
+      // Tools->setVoltageMax( ... ); Tools->setVoltageMin( ... ); и т.п.
+      
+      // Индикация подсказки по строкам дисплея
+      Display->getTextMode( (char*) "   CC/CV SELECTED    " );
+      Display->getTextHelp( (char*) "  P-DEFINE  C-START  " );
+      Display->progessBarOff();
+  }
+  MState * MStart::fsm()
+  {
+    switch ( Keyboard->getKey() )
+    {
+      case MKeyboard::C_CLICK :                // Если короткое нажатие на "C"
+        // Пересчет из параметров батареи в напряжения и токи
+        Tools->setVoltageMax( MChConsts::voltageMaxFactor * Tools->getVoltageNom() );
+        Tools->setVoltageMin( MChConsts::voltageMinFactor * Tools->getVoltageNom() );
+        Tools->setCurrentMax( MChConsts::currentMaxFactor * Tools->getCapacity() );
+        Tools->setCurrentMin( MChConsts::currentMinFactor * Tools->getCapacity() );
+        return new MPostpone(Tools);           // Выбран переход в состояние отложенного старта
+      case MKeyboard::P_CLICK :                // Если короткое нажатие на "P"
+        return new MSetCurrentMax(Tools);      // Выбран переход в состояние уточнения настроек заряда.
+      default:;
+    }
+    Display->voltage( Board->getRealVoltage(), 2 ); // Во второй строке дисплея показывать напряжение
+    Display->current( Board->getRealCurrent(), 1 ); // В первой строке дисплея показывать ток
+    return this;                               // Ничего не выбрано, оставаться в этом состоянии до выбора
+  };
+
+
+  // Состояние "Коррекция максимального тока заряда"."
+  MSetCurrentMax::MSetCurrentMax(MTools * Tools) : MState(Tools)
+  {
+    // Индикация подсказки
+    Display->getTextMode( (char*) "U/D-SET CURRENT MAX" );
+    Display->getTextHelp( (char*) "  B-SAVE  C-START  " );
+  }
+  MState * MSetCurrentMax::fsm()
+  {
+    switch ( Keyboard->getKey() )             // Что нажато и как долго
+    {
+      case MKeyboard::C_LONG_CLICK :
+        return new MStop(Tools);              // Переход в состояние стоп
+      case MKeyboard::C_CLICK :            
+        return new MPostpone(Tools);          // Отказ от дальнейшего ввода параметров - исполнение
+      case MKeyboard::B_CLICK :            
+        Tools->saveFloat( MNvs::nCcCv, MNvs::kCcCvImax, Tools->getCurrentMax() ); 
+        return new MSetVoltageMax(Tools);     // Сохранить и перейти к следующему параметру
+      case MKeyboard::UP_CLICK :
+      case MKeyboard::UP_AUTO_CLICK :
+        Tools->currentMax = Tools->upfVal( Tools->currentMax, MChConsts::i_l, MChConsts::i_h, 0.1f );
+        break;             // Корректировать по короткому нажатию на +0.1, по удержанию - повторять +0.1
+      case MKeyboard::DN_CLICK :
+      case MKeyboard::DN_AUTO_CLICK :
+        Tools->currentMax = Tools->dnfVal( Tools->currentMax, MChConsts::i_l, MChConsts::i_h, 0.1f );
+        break;
+      default:;
+    }
+    // Если не закончили ввод, то индикация введенного
+    Display->voltage( Board->getRealVoltage(), 2 );
+    Display->current( Tools->getCurrentMax(), 1 );
+    return this;                               // и остаемся в том же состоянии
+  };
+
+
+  //... несколько состояний аналогичны и опущены
+
+
+  // Состояние: "Подъем и удержание максимального тока"
+  MUpCurrent::MUpCurrent(MTools * Tools) : MState(Tools)
+  {   
+    // Индикация подсказки
+    Display->getTextMode( (char*) " UP CURRENT TO MAX " );
+    Display->getTextHelp( (char*) "       C-STOP      " );
+    // Обнуляются счетчики времени и отданного заряда
+    Tools->clrTimeCounter();
+    Tools->clrAhCharge();
+    // Включение (показано схематично, команды драйверу)
+    Tools->setComAmp( ток );
+    Tools->setComVolt( напряжение );
+    Tools->setComGo();
+  }     
+  MUpCurrent::MState * MUpCurrent::fsm()
+  {
+    Tools->chargeCalculations();              // Подсчет отданных ампер-часов.
+    // После пуска короткое нажатие кнопки "C" производит отключение тока.
+    if(Keyboard->getKey(MKeyboard::C_CLICK)) { return new MStop(Tools); }    
+    // Проверка напряжения и переход на поддержание напряжения.
+    if( Board->getRealVoltage() >= Tools->getVoltageMax() ) { return new MKeepVmax(Tools); }
+      
+    // Индикация фазы подъема тока не выше заданного
+    Display->voltage( Board->getRealVoltage(), 2 );
+    Display->current( Board->getRealCurrent(), 1 );
+    Display->progessBarExe( MDisplay::GREEN );
+    Display->duration( Tools->getChargeTimeCounter(), MDisplay::SEC );
+    Display->amphours( Tools->getAhCharge() );
+      
+    return this;
+  };
+
+  // Третья фаза заряда - достигнуто снижение тока заряда ниже заданного предела.
+  // Проверки различных причин завершения заряда.
+  MKeepVmin::MKeepVmin(MTools * Tools) : MState(Tools)
+  {
+    // Индикация подсказки
+    Display->getTextMode( (char*) " KEEP VOLTAGE MIN  " );
+    Display->getTextHelp( (char*) "       C-STOP      " );
+    // Порог регулирования по напряжению (схематично)
+    Tools->setComVoltMin();         
+  }     
+  MState * MKeepVmin::fsm()
+  {
+    Tools->chargeCalculations();        // Подсчет отданных ампер-часов.
+    // Окончание процесса оператором.
+    if (Keyboard->getKey(MKeyboard::C_CLICK)) 
+    { return new MStop(Tools); }       
+    // Здесь возможны проверки других условий окончания заряда
+    // if( ( ... >= ... ) && ( ... <= ... ) )  { return new MStop(Tools); }
+    // Максимальное время заряда, задается в "Настройках"
+    if( Tools->getChargeTimeCounter() >= ( Tools->charge_time_out_limit * 36000 ) ) 
+    { return new MStop(Tools); }
+    Tools->setComVolt( указываем напряжение в милливольтах );           // Регулировка по напряжению
+    Display->progessBarExe( MDisplay::MAGENTA );
+    Display->duration( Tools->getChargeTimeCounter(), MDisplay::SEC );
+    Display->amphours( Tools->getAhCharge() );
+    return this;
+  };
+
+
+ // Состояние: "Завершение заряда"
+  MStop::MStop(MTools * Tools) : MState(Tools)
+  {
+    Tools->shutdownCharge();
+    Display->getTextHelp( (char*) "              C-EXIT " );
+    Display->getTextMode( (char*) "   CC/CV CHARGE OFF  " );
+    Display->progessBarStop();
+  }    
+  MState * MStop::fsm()
+  {
+    switch ( Keyboard->getKey() )
+    {
+      case MKeyboard::C_CLICK :
+        return new MExit(Tools);
+      default:;
+      
+      //Display->progessBarOff();
+    }
+    return this;
+  };
+
+  // Состояние: "Индикация итогов и выход из режима заряда в меню диспетчера" 
+  MExit::MExit(MTools * Tools) : MState(Tools)
+  {
+    Tools->shutdownCharge();
+    Display->getTextHelp( (char*) "              C-EXIT " );
+    Display->getTextMode( (char*) "   CC/CV CHARGE OFF  " );
+    Display->progessBarOff();
+  }    
+  MState * MExit::fsm()
+  {
+    switch ( Keyboard->getKey() )
+    {
+      case MKeyboard::C_CLICK :
+        Display->getTextMode( (char*) "    CC/CV CHARGE     " );
+        Display->getTextHelp( (char*) " U/D-OTHER  B-SELECT " );
+        return nullptr;                             // Возврат к выбору режима
+      default:;
+    }
+    return this; // до нажатия кнопки "С" удерживается индикация о продолжительности и отданном заряде.
+  };
+};
+// !Конечный автомат режима простого заряда (CCCV).
+```
+Вот она! глубинная простота. Про всякие там "поздние связывания" нам знать не обязательно. Но то, что определение класса состояния начинается с конструктора (помним, что конструктор не возвращает никаких значений) - это инициализация состояния,  а далее следует определение объявленной ранее виртуальной функции, то есть что исполняется на этом шаге при каждом вызове. Короче. Любое отдельно взятое состояние будет выглядеть понятно. Получится думать не "галактикой", а одним и только одним состоянием в каждый момент.
+Есть одно "но", связанное с тем, что конструктор нового состояние создается до выхода из предыдущего. Не вдаваясь в объяснения - здесь так делать можно:
+```c++
+// Состояние: "..."
+
+  MName::MMName(MTools * Tools) : MState(Tools)
+  {   
+    // Это конструктор, здесь инициализация состояния
+    // Используя методы из MTools выполните то, что требуется исполнить при переходе в это
+    // состояние из какого-то иного состояния. Учтите, что конструктор ничего не возвращает.
+  }
+    
+  MName::MName * MName::fsm()
+  {
+    // Это определение и вызов функции, здесь описывается методами MTools что надо выполнять
+    // вслед за инициализацией и при каждом вызове этого состояния операционной системой.
+    // Если при каждом вызове состояния что-то безусловно меняется, например индикация,
+    // то укажите здесь.
+
+    // В порядке приоритета при необходимости приведите проверки условий, при выполнении
+    // которых выполняется запрос перехода в иное выбранное состояние, например
+
+    if( условие = true ) { return new MName2(Tools); }
+
+    // Если ни одно из условий не выполняется, то запрашивается возврат в это же состояние.
+    // Однако если в этом случае опять-таки что-то меняется, задаем  здесь.
+
+    return this;
+    // return nullptr;   // Или для выхода из последнего состояния к выбору иного режима
+  };
+```
+Как вы заметили, выделенные строки одинаковы во всех состояниях, радость-то какая))
+
+Определения состояний расположены в произвольном порядке. И связаны только через return this, return name или return nullptr, которые выполняются при следующем обращении операционной системы к задаче. Какой? Не всё сразу. В итоге: определения можно располагать в произвольном порядке, копировать при необходимости из других режимов не заботясь о повторении имен. Избыточность? Зато головной боли меньше. Кстати, реализация режима, взятого для примера, занимает в памяти всего лишь 0,2%.
+
+#### Теперь базовый класс MState:
+
+##### файл mstate.h
+```c++
+#ifndef _MSTATE_H_
+#define _MSTATE_H_
+
+class MTools;
+class MBoard;
+class MDisplay;
+class MKeyboard;
+
+class MState
+{
+  public:
+    MState(MTools * Tools);
+    virtual ~MState(){}
+    virtual MState * fsm() = 0;
+
+  protected:
+    MTools    * Tools    = nullptr;
+    MBoard    * Board    = nullptr;
+    MDisplay  * Display  = nullptr;
+    MKeyboard * Keyboard = nullptr;
+};
+
+#endif // !_MSTATE_H_
+```
+Функция fsm() объявлена виртуальной и в файлах реализации режимов наследуется как виртуальная, поэтому там "virtual" не обязателен, да и "override" добавлен исключительно для читабельности.
+
+файл mstate.cpp
+```c++
+#include "mstate.h"
+#include "mtools.h"
+
+MState::MState(MTools * Tools) :
+  Tools(Tools),
+  Board(Tools->Board),
+  Display(Tools->Display),
+  Keyboard(Tools->Keyboard) {}
+```
+
+Вы не находите, что это шедевр? Не мой - профессионала в этом деле.   ***Я не бездействовал, я сразу на капу нажал.***  
+Попросил сделать максимально удобно из двух возможных вариантов для непрограммиста, но с навыками программирования (Во! как сказал - это я про себя). Кстати, если интересует почему все имена классов начинаются на одну и ту же букву - так это наше, фамильное)).
+
+Далее по порядку:
+MTools - класс, где состедоточено большая часть инструментария. Предполагается, что это пишет разработчик аппаратной части проекта, хорошо осведомленный в том, что можно, а за какие рамки заходить нельзя.
+В отдельные классы оформлены (исторически так получилось)  описания и управление некоторыми ресурсами аппаратной части проекта - MBoard, MDisplay, MKeyboard. К ним вернусь позже.
+
+На очереди класс MDispatcher, который отвечает за выбор режима работы прибора посредством меню. Но сначала в конструкторе - инициализация всего-всего.  Будете искать в Setup() привычные init(); - не ищите, конструктор класса по сути это и есть init().
+
+##### файл dispatcher.h
+```c++
+#ifndef _DISPATCHER_H_
+#define _DISPATCHER_H_
+
+class MTools;
+class MBoard;
+class MDisplay;
+class MState;
+
+class MDispatcher
+{
+  public:
+    enum MODES
+    {
+      OPTIONS = 0,    // режим ввода настроек (не отключаемый)
+      TEMPLATE,       // шаблон режима
+      DCSUPPLY,       // режим источника постоянного тока
+      PULSEGEN,       // режим источника импульсного тока
+      CCCVCHARGE,     // режим заряда "постоянный ток / постоянное напряжение"
+      PULSECHARGE,    // режим импульсного заряда
+      RECOVERY,       // режим восстановления
+      STORAGE,        // режим хранения
+      DEVICE,         // режим заводских регулировок
+      SERVICE         // режим Сервис АКБ
+    };
+
+  public:
+    MDispatcher(MTools * tools);
+
+    void run();
+    void delegateWork();
+    void textMode(int mode);
+
+  private:
+    MTools    * Tools;
+    MBoard    * Board;
+    MDisplay  * Display;
+    MState    * State = 0;
+
+    bool latrus = false;
+    int mode = CCCVCHARGE;
+};
+
+#endif //_DISPATCHER_H_
+```
+ В начале, как и ранее было показано, идет конструктор класса. В данном случае выполняет роль инициализации всего-всего. Константы ... кто видел где константы??? Да где же им быть - в объявлении класса. Тут есть как свои достоинства, так и недостатки.
+
+
+##### файл dispatcher.cpp
+```c++
+#include "mdispatcher.h"
+#include "nvs.h"
+#include "mtools.h"
+#include "mboard.h"
+#include "mkeyboard.h"
+#include "mdisplay.h"
+
+#include "modes/templatefsm.h"
+// ...
+#include "modes/cccvfsm.h"
+#include "modes/servicefsm.h"
+
+#include <string>
+
+MDispatcher::MDispatcher(MTools * tools): Tools(tools), Board(tools->Board), Display(tools->Display)
+{
+    char sLabel[ MDisplay::MaxString ] = { 0 };
+    strcpy( sLabel, "  OLMORO ** ELTRANS  " );
+    Display->getTextLabel( sLabel );
+
+    latrus = Tools->readNvsBool( MNvs::nQulon, MNvs::kQulonLocal, true );
+    mode   = Tools->readNvsInt ( MNvs::nQulon, MNvs::kQulonMode, 0 );   // Индекс массива
+
+    textMode( mode );
+    Tools->powInd = Tools->readNvsInt  ( MNvs::nQulon, MNvs::kQulonPowInd, 3);
+    // Индекс массива с набором батарей 3
+    Tools->akbInd = Tools->readNvsInt  ( MNvs::nQulon, MNvs::kQulonAkbInd, 3);
+    Tools->setVoltageNom( Tools->readNvsFloat( MNvs::nQulon, MNvs::kQulonAkbU, Tools->akb[3][0]));
+    Tools->setCapacity( Tools->readNvsFloat( MNvs::nQulon, MNvs::kQulonAkbAh, Tools->akb[3][1]) );
+
+    Tools->postpone = Tools->readNvsInt( MNvs::nQulon, MNvs::kQulonPostpone,  3 );
+
+    // Калибровки измерителей 
+    Board->voltageMultiplier  = Tools->readNvsFloat( MNvs::nQulon, MNvs::kQulonVmult,   1.00f );
+    Board->voltageOffset      = Tools->readNvsFloat( MNvs::nQulon, MNvs::kQulonVoffset, 0.00f );
+    Board->currentMultiplier  = Tools->readNvsFloat( MNvs::nQulon, MNvs::kQulonImult,   1.40f );
+    Board->currentOffset      = Tools->readNvsFloat( MNvs::nQulon, MNvs::kQulonIoffset, 0.00f );
+}
+
+void MDispatcher::run()
+{
+  // Индикация при инициализации процедуры выбора режима работы
+  Display->voltage( Board->getRealVoltage(), 2 );
+  Display->current( Board->getRealCurrent(), 1 );
+
+  // Выдерживается период запуска для вычисления амперчасов
+  if (State)
+  {
+    // rabotaem so state mashinoj
+    MState * newState = State->fsm();     
+    if (newState != State)                  //state changed!
+    {
+      delete State;
+      State = newState;
+    }
+    //esli budet 0, na sledujushem cikle uvidim
+  }
+  else //state ne opredelen (0) - vybiraem ili pokazyvaem rezgim
+  {
+    if (Tools->Keyboard->getKey(MKeyboard::UP_CLICK))
+    {
+      if (mode == (int)SERVICE) mode = OPTIONS;
+      else mode++;
+      textMode( mode );
+    }
+
+    if (Tools->Keyboard->getKey(MKeyboard::DN_CLICK))
+    {
+      if (mode == (int)OPTIONS) mode = SERVICE;
+      else mode--;
+      textMode( mode );
+    }
+
+    if (Tools->Keyboard->getKey(MKeyboard::B_CLICK))
+    {
+      // Запомнить крайний выбор режима
+      Tools->writeNvsInt( MNvs::nQulon, "mode", mode );
+
+      switch (mode)
+      {
+        case OPTIONS:     State = new OptionFsm::MStart(Tools);     break;
+          // несколько режимов опущены
+        case CCCVCHARGE:  State = new CcCvFsm::MStart(Tools);       break;
+        case SERVICE:     State = new ServiceFsm::MStart(Tools);    break;
+        default:          break;
+      }
+    } // !B_CLICK
+  }
+}
+
+void MDispatcher::textMode(int mode)
+{
+  char sMode[ MDisplay::MaxString ] = { 0 };
+  char sHelp[ MDisplay::MaxString ] = { 0 };
+
+  switch(mode)
+  {
+    case OPTIONS:
+      sprintf( sMode, "OPTIONS: BATT.SELECT," );
+      sprintf( sHelp, "CALIBRATION,TIMER ETC" );
+    break;
+
+    case CCCVCHARGE:
+      sprintf( sMode, "    CC/CV CHARGE:    " );
+      sprintf( sHelp, " U/D-OTHER  B-SELECT " );
+    break;
+
+      // ...
+    case SERVICE:
+      sprintf( sMode, "  BATTERY SERVICE:   " );
+      sprintf( sHelp, " ADJUSTING THE DEVICE" );
+    break;
+
+    default:
+      sprintf( sMode, "  ERROR:             ");
+      sprintf( sHelp, "  UNIDENTIFIED MODE  " );
+    break;
+  }
+
+  Display->getTextMode( sMode );
+  Display->getTextHelp( sHelp );
+}
+```
+Диспетчер выполнят две функции: первая - работа с меню до запуска выбранного режима, вторая - инициализация состояния и вызов виртуальной функции, определенной в классе этого состояния. Функция run() диспетчера проверяет номер состояния, который возвращается активным состоянием на ноль (nullptr) - это означает выход из режима в меню выбора. При ненулевом значении и отличным номером инициируется новое состояние, иначе будет исполнена та же функция, что и при предыдущем вызове естественно без инициализации. Всё тривиально просто. Но исполнителя требуется в первую очередь аккуратность.
+Большую часть диспетчера занимает отправка на дисплей строк меню. Какие-то фоновые функции можно выполнить и здесь, в диспетчере, но лучше под них выделить отдельную задачу для RTOS и сбагрить её кому-то. И обратите внимание, как запускается fsm диспетчера - пригодится для реализации неотключаемых процессов.
+
+
+Задачи RTOS. Хотите вы или нет, но с операционной системой реального времени Free RTOS придется подружиться. Разработчики Expressif постарались максимально облегчить жизнь программиста. Учебники по Free RTOS - в помощь, но надо иметь ввиду, что учебники писались для одноядерных процессоров, а ESP32 имеет два ядра. И блокировать, например, оба не есть хорошо. Рекомендуется для задач обслуживания радиотехнического блока использовать одно ядро, а для целевой программы - другое. Оформить сказанное не просто, а очень просто. Многое в настройках RTOS уже сделано за нас, тем более, если используется SDK от Expressif да ещё и под Ардуиной.  Уверяю, что скоро вы забудете, что ваш код исполняется под ОС. А вот без каких данных не обойтись - так это временные параметры процессов. Монопольно занимать одной задачей более 13 миллисекунд - моветон. Система отработает рестарт. На каждую задачу отводится 1 миллисекунда, потом обрабатывается другая задача. Иногда нельзя допустить перерыва в обработке ... впрочем это азы - отправляю к учебнику.
+Вот так выглядит инициализация RTOS и разбиение нашего функционала на задачи. Некоторая особенность реализации вызвана ардуиновским делением файла main.cpp на setup() и loop(). Профи оценят.
+
+##### файл main.cpp
+```c++
+#include "mboard.h"
+#include "mcommands.h"
+#include "mdisplay.h"
+#include "mtools.h"
+#include "mdispatcher.h"
+#include "mconnmng.h"
+#include "mmeasure.h"
+#include "connectfsm.h"
+
+static MBoard      * Board      = 0;
+static MDisplay    * Display    = 0;
+static MTools      * Tools      = 0;
+static MCommands   * Commands   = 0;
+static MMeasure    * Measure    = 0;
+static MDispatcher * Dispatcher = 0;
+static MConnect    * Connect    = 0;
+
+void connectTask ( void * );
+void displayTask ( void * );
+void coolTask    ( void * );
+void mainTask    ( void * );
+void measureTask ( void * );
+void driverTask  ( void * );
+
+void setup()
+{
+  Display    = new MDisplay();
+  Board      = new MBoard(Display);
+  Tools      = new MTools(Board, Display);
+  Commands   = new MCommands(Board);
+  Measure    = new MMeasure(Tools);
+  Dispatcher = new MDispatcher(Tools);
+  Connect    = new MConnect(Tools);
+
+  // Выделение ресурсов для каждой задачи: память, приоритет, ядро.
+  // Все задачи исполняются ядром 1, ядро 0 выделено для радиочастотных задач - BT и WiFi.
+  xTaskCreatePinnedToCore ( connectTask, "Connect", 10000, NULL, 1, NULL, 1 );
+  xTaskCreatePinnedToCore ( mainTask,    "Main",    10000, NULL, 2, NULL, 1 );
+  xTaskCreatePinnedToCore ( displayTask, "Display",  5000, NULL, 2, NULL, 1 );
+  xTaskCreatePinnedToCore ( coolTask,    "Cool",     1000, NULL, 2, NULL, 1 );
+  xTaskCreatePinnedToCore ( measureTask, "Measure",  5000, NULL, 2, NULL, 1 );
+  xTaskCreatePinnedToCore ( driverTask,  "Driver",   5000, NULL, 2, NULL, 1 );
+}
+
+void loop() {}                            // Это тоже задача, пустая в данном случае
+
+// Задача подключения к WiFi сети (полностью заимствована как есть)
+void connectTask( void * )
+{
+  while(true)
+  {
+    Connect->run();
+    // Период вызова задачи задается в TICK'ах, TICK по умолчанию равен 1мс.
+    vTaskDelay( 10 / portTICK_PERIOD_MS );
+  }
+  vTaskDelete( NULL );
+}
+
+// Задача выдачи данных на дисплей
+void displayTask( void * )
+{
+  while(true)
+  {
+    Display->runDisplay(
+                        Board->Overseer->getCelsius(),
+                        Tools->getAP() );
+    vTaskDelay( 250 / portTICK_PERIOD_MS );
+  }
+  vTaskDelete( NULL );
+}
+
+// Задача управления системой теплоотвода.
+void coolTask( void * )
+{
+  while (true)
+  {
+    Board->Overseer->runCool();
+    vTaskDelay( 200 / portTICK_PERIOD_MS );
+  }
+  vTaskDelete( NULL );
+}
+
+// Задача обслуживает выбор режима работы и
+// управляет конечным автоматом выбранного режима вплоть да выхода из него
+void mainTask ( void * )
+{
+  while (true)
+  {
+    // Выдерживается период запуска для вычисления амперчасов. Если прочие задачи исполняются в     // порядке очереди, то эта точно по таймеру - через 0,1с.
+    portTickType xLastWakeTime = xTaskGetTickCount();
+    Dispatcher->run();
+    vTaskDelayUntil( &xLastWakeTime, 100 / portTICK_PERIOD_MS );    // период 0,1с
+  }
+  vTaskDelete( NULL );
+}
+
+// Задача управления измерениями
+void measureTask( void * )
+{
+  while (true)
+  {
+    Measure->run();
+    vTaskDelay( 10 / portTICK_PERIOD_MS );
+  }
+  vTaskDelete(NULL);
+}
+
+void driverTask( void * )
+{
+  while (true)
+  {
+    Commands->doCommand();
+    vTaskDelay( 100 / portTICK_PERIOD_MS );
+  }
+  vTaskDelete(NULL);
+}
+```
+  Согласитесь - ничего сложного и запутанного в реализации конечного автомата по этому способу нет.
+
+Всё. Успехов!
+                               Версия FSM от 28 января  2021 года                                       
+                               редакция       2 декабря 2022 года  
+                               [^](#menu)                                     
+***
+## <p align="center">5. Первый проект.<a name="first_project"></a>
+
+От слов перейдем к делу.
+1. Вооружившись решимостью запрограммировать проект заряда имени себя любимого, которого ни у кого нет - придумаем ему короткое и звучное название (не проекту - пока только режиму, назовём к примеру MYMODE).
+
+2. Найдите в папке modes файлы templatefsm.h и templatefsm.cpp с примером реализации режима и скопируйте в ту же папку но под названием вашего режима mymodefsm.h и mymode.cpp, произведя обязательные изменения в следующих стоках:
+
+файл mymodefsm.h
+```c++
+#ifndef _MYMODEFSM_H_   //#ifndef _TEMPLATEFSM_H_
+#define _MYMODEFSM_H_   //#define _TEMPLATEFSM_H_
+
+namespace Mymode        //namespace Template
+```
+
+файл mymodefsm.cpp
+```c++
+#include "modes/mymodefsm.h"    //#include "modes/templatefsm.h"
+
+namespace Mymode                //namespace Template
+```
+Остальные строки оставьте пока без изменений, так как наша цель убедиться, что вход, исполнение и выход из нового режима будет точно такой же, как и у образцового.
+
+3. Откройте файл mdispatcher.h и в списке режимов подберите новому режиму достойное место, исключая первое и последнее. При переборе режимов кнопками он будет вызываться после TEMPLATE или CCCV в зависимости от того, в каком направлении листается список режимов. Не забудьте поставить запятую.
+
+```c++
+  public:
+    enum MODES
+    {
+      BOOT = 0,            // режим синхронизации
+      OPTIONS,             // режим ввода настроек
+      UPID,                // режим настройки регулятора по напряжению
+      IPID,                // режим настройки регулятора по току
+      DPID,                // режим настройки регулятора по току разряда
+      TEMPLATE,            // шаблон режима 
+    MYMODE,              // мой режим
+      CCCV,                // режим заряда "постоянный ток / постоянное напряжение"
+      CCCVT,               // режим заряда CC/CV "технологический"
+      //DISCHARGE,           // режим разряда
+      DEVICE               // режим заводских регулировок
+    };
+```
+4. Откройте файл mdispatcher.cpp и откорректируйте строку с указателем пути к файлу вашего режима
+```c++
+#include "modes/mymodefsm.h"    //#include "modes/templatefsm.h"
+```
+В том же файле найдите строку с case TEMPLATE и введите аналогичную для вашего режима - это будет указание диспечеру осуществлять запуск именно вашего режима.
+```c++
+          case TEMPLATE:    State = new Template::MStart(Tools);  break;
+          case MYMODE:      State = new Mymode::MStart(Tools);  break;
+```
+В том же файле найдите, скопируйте и отредактируйте указание диспетчеру что надо выводить на экран при пролистывании списка возможных режимов в поиске вашего режима. Размер строк лучше не нарушать, пробелы в начале и конце обязятельны по крайней мере в этой версии.
+```c++
+    case TEMPLATE:
+      sprintf(sMode, "    TEMPLATE:     " );
+      sprintf(sHelp, "     EXAMPLE      " );
+    break;
+
+    case MYMODE:
+      sprintf(sMode, "     MYMODE:      " );
+      sprintf(sHelp, "      FIRST       " );
+    break;    
+```
+5. Компилируем, загружаем, находим наш режим, запускаем его и проверяем. СТОП! Надо бы удостовериться, что запущен не TEMPLATE, а именно наш. Открываем файл .cpp нашего режима и в строке
+```c++
+    Board->ledsOn();         // Светодиод светится белым как индикатор входа в режим
+```
+меняем цвет светодиода с белого на какой-нибудь другой, повторяем необходимые действия и вуаля - пусть это ещё и не проект, но видно, что именно мы виляем хвостом, а не наоборот. 
+
+Передохнём... Далее будем работать с [классами](http://cppstudio.com/post/439/) - без них никак. 
+
+И напоследок... Объявление класса будем делайть в отдельном файле, если привыкли делать по-ардуиновски, так это плохая привычка, от которой следует избавиться и чем скорее, тем лучше.
+
+6. Далее будете шаг за шагом, объявлять и определять состояние за состоянием в соответствии со своими желаниями. Вам понадобятся файлы mboard.h, mtools.h и mdisplay.h в которыx объявлены все утилиты, составляющие ваш арсенал как разработчика. А ниже в помощь представлен пример реализации одного из состояний режима заряда с подробными комментариями.
+
+Примечание: Для упрощения восприятия в этом примере управление всеми ресурсами - как аппаратными, так  и программными производится через класс MTools.
+    
+Файл cccvfsm.h
+```c++
+  /*  Объявляется поле имен для этого (CCCV) режима. Имена классов, констант
+    и переменных к большой радости любителей "копи-паста" в других режимах можно 
+    использовать без изменений. */
+namespace MCccv
+{
+  /* Здесь объявляются и определяются общие для этого поля имен константы */
+  struct MConst
+  {
+    static constexpr float fixed_kp_v = 0.100f;
+    ...
+  };
+
+  /* Объявляются ВСЕ КЛАССЫ, описывающие состояния (шаги) режима, В ЛЮБОЙ ПОСЛЕДОВАТЕЛЬНОСТИ. */
+  class M... 
+  {};
+
+  class MUpCurrent : public MState
+  {
+    public:   
+      MUpCurrent(MTools * Tools);
+      MState * fsm() override;      // Объявлена виртуальная функция, 
+                                    // вызывается только по адресу 
+                                    // и возвращает указатель на состояние.
+    private:
+      /* Здесь объявляются и определяются константы и переменные этого класса. */
+      static constexpr float voltage_max_factor = 0.95f;
+      static constexpr float voltage_max = 14.4f;
+      float maxV;                   // Переменную можно объявить видимой только в этом классе ... 
+  };
+
+  class M...
+  {};
+};
+```
+
+Файл cccvfsm.cpp
+```c++
+namespace MCccv
+{
+  float maxV;   // ... или здесь, но видимой во всех классах данного поля имен MCccv
+
+  /*  Начальный этап заряда - ток поднимается не выше заданного уровня, при достижении 
+    заданного максимального напряжения - переход к его удержанию. 
+    Подсчитывается время и отданный заряд, оператор может лишь прекратить заряд. */
+
+  // Состояние "Подъем и удержание максимального тока" описывается классом MUpCurrent
+  MUpCurrent::MUpCurrent(MTools * Tools) : MState(Tools)
+  {   
+    /*  Конструктор класса выполняет инициализацию при входе в это состояние
+      только в том случае, если совершен переход из другого состояния, а не 
+      возврат, когда такого перехода не было. (Эта функция возложена на диспетчер)*/
+
+    maxV = Tools->readNvsFloat("cccv", "maxV", voltage_max);  /* Так берутся данные из
+      энергонезависимой памяти - "имя", "ключ", значение по умолчанию */
+
+    Tools->showMode((char*)"  CONST CURRENT   ");     // Показывать фазу заряда
+    Tools->showHelp((char*)"   *C, C - STOP   ");     // Показывать активные кнопки как помощь
+    Tools->ledsGreen();                               // Светодиод включить зеленым
+    Tools->clrTimeCounter();                          // Обнулить счетчик времени
+    Tools->clrAhCharge();                             // Обнулить счетчик ампер-часов
+
+    /* Включение преобразователя и коммутатора драйвером силовой платы.
+     Параметры PID-регулятора заданы в настройках прибора. Здесь задаются сетпойнты 
+     по напряжению и току. Подъем тока и удержание производится ПИД-регулятором.
+    */ 
+    Tools->txPowerAuto(maxV, maxI, maxS);             /* Начать процесс заряда, подав
+      команду с максимальным напряжением, током и скоростью нарастания тока. На этом 
+      инициализация состояния закончена. Не забываем, что конструктор класса ничего не 
+      возвращает при исполнении */ 
+  }
+    /*  Методы класса здесь в единственном числе, и представлены функцией */   
+  MUpCurrent::MState * MUpCurrent::fsm()
+  {
+    /* Здесь располагается всё, что надо выполнить при каждом вхождении в это состояние: */
+    Tools->chargeCalculations();                        // Обновить отданные ампер-часы.
+    /*  Проверим, не была ли нажата, какая и как долго, кнопка. И если да, то "бииип" и 
+      закажем переход в указанное состояние, иначе выполним то, что должны сделать перед 
+      повторным входом в это же состояние. */ 
+    switch ( Tools->getKey() )
+    {
+      case MKeyboard::C_CLICK:
+      case MKeyboard::C_LONG_CLICK: Tools->buzzerOn();  /* Если зафиксировано короткое или
+        длинное нажатие, то заказано досрочное прекращение заряда оператором и ... */
+      return new MStop(Tools);                          // ... переход в состояние MStop.
+      // case ... остальные кнопки,если надо.
+      default:;
+    }
+
+      /*  Если по кнопкам переходов нет, то выполняем проверки, например, не пора ли переходить 
+        ко второй фазе заряда, если напряжение на батарее достигло некоторого уровня: */
+    if(Tools->getRealVoltage() >= maxV * voltageMaxFactor);
+    return new MKeepVmax(Tools);                        // ... переход к удержанию напряжения. 
+    
+      /*  Если ничего из вышеперечисленного не случилось, обновляем индикацию ... */
+    Tools->showVolt(Tools->getRealVoltage(), 3);  // Три знака после зпт
+    Tools->showAmp (Tools->getRealCurrent(), 2);  // ... двух достаточно
+    Tools->initBar(TFT_GREEN);                    /* Бегущая зеленая полоска, когда 
+      состоится переход ко второй фазе её назначим желтой */  
+    Tools->showDuration(Tools->getChargeTimeCounter(), MDisplay::SEC); /* Это время - 
+      добавилась 0,1 с - ровно через столько операционная система производит проверку 
+      состояния */
+    Tools->showAh(Tools->getAhCharge());  /* Обновим набежавшие ампер-часы */
+    return this;   /* И если ничего не забыли, закажем операционке возврат в это состояние, 
+      естественно, без инициализации. Кстати, если надо "вывалиться" из текущего режима в 
+      главное меню, то заказывается такой переход не менее красиво: return nullptr; */ 
+  };  // MUpCurrent
+
+  ...
+};
+```
+
+[^](#menu)
+***
+
+## <p align="center">6. Драйвер SAMD21.<a name="driver"></a>
+
+Измерение тока занимает не более 30 микросекунд:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/I_measure.png)
+
+Измерение напряжения занимает не более 30 микросекунд:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/U_measure.png)
+
+ШИМ преобразователя имеет частоту около 190 килогерц:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/PWM_exe.png)
+
+ПИД-регулирование с частотой от 10 до 250 герц занимает не более 35 микросекунд:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/PID_control.png)
+
+Прием посылки от ESP32 не мешает измерениям:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/UART_request.png)
+
+Ответная посылка передается не мешая измерениям:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/UART_full.png)
+
+Данная реализация драйвера задумывалась как масштабируемое техническое решение - как поёт Алёна Апина: "я его слепила из того что было". А потому нелишне будет узнать, как пересчитать "хотелки" в технические понятия.
+
+## <p align="center"> Выбор аналоговых портов.<a name="port"></a>
+
+Для получения времени измерения в пределах 25-30 микросекунд настроки аналогово-цифрового преобразователя, как бы не отличались каналы измерения напряжения и тока, выбраны одинаковыми, и задаются только при инициализации, но не при переключении от измерения тока к измерению напряжения и наоборот. В указанный период удалось "втиснуть" 16 дифференциальных измерений, их усреднение, проверку нахождения в разрешенном диапазоне и активацию защиты в случае необходимости - такие преимущества дает реализация измерений и управления на одном кристалле.
+А наибольшую задержку вносит оптопара - аж целых 25 микросекунд - но на такое время и 40-амперный MOSFET становится "160-амперным".
+
+```c++
+void initMeasure()
+{
+  analogPrescaler(2);                 // 2 (25 µs), 3 (38 µs), 4(65 µs)
+  analogReference2(0x03);             // выбор опорного VREFA = 1240 mV или
+  //analogReference2(0x00);           //               INTREF = 1000 mV
+  analogGain(0x01);                   // усиление *2.0
+  analogReadConfig(0x00, 0x00, 0x00); // bits, samples, divider - отключено
+  analogReferenceCompensation(0);     // автокомпенсация начального смещения выключена
+}
+```
+Следует добавить, что НЧ фильтры на входах измерителей имеют частоту среза примерно по 8-10 килогерц. Даёт ли это равенство какой-то эффект осталось не выясненным, но частота среза взята из рекомендации для INA226 - а вдруг?
+[^](#menu)
+
+## <p align="center">Коэффициент пересчета в миллиамперы.<a name="kma"></a>
+
+```c++
+constexpr float VREFA  = 1240.0F;      // mV   (внешний источник опорного напряжения)
+constexpr float GAIN   =    2.0F;      // усиление
+constexpr float ADCMAX = 2048.0F;      // для дифференциального режима 2^11
+constexpr float SHL    =  512.0F;      // множитель для целочисленных вычислений 2^9
+
+  // Данные аппаратной поддержки измерителя тока:
+constexpr float KSHUNT = 1000.0/20.0F;  // mA/mV (1A/20mV) параметр шунта (два по R04 в параллель)
+  // Ожидаемый коэффициент преобразования в миллиамперы        
+constexpr unsigned short factor_default_i = short(KSHUNT*VREFA*GAIN*SHL/ADCMAX);  // 0x7918
+```
+[^](#menu)
+
+## <p align="center">Коэффициент пересчета в милливольтры.<a name="kmv"></a>
+
+```c++
+  // Данные аппаратной поддержки измерителя напряжения:
+constexpr float RUP    =  10.0F;      // кОм (верхнее плечо входного делителя напряжения)
+constexpr float RDN    =   0.3F;      // кОм (нижнее плечо)
+constexpr float KDEL   = (RUP+RDN)/RDN;
+  // Ожидаемый коэффициент преобразования в милливольты        
+constexpr unsigned short factor_default_v = short(KDEL*VREFA*GAIN*SHL/ADCMAX); //0x5326
+```
+[^](#menu)
+
+## <p align="center"> Выбор таймера ШИМ.<a name="timer2"></a>
+
+В качестве донора силового преобразователя, с которого были использованы электролитические конденсаторы и дроссель неизвестной индуктивности, был использован 9-амперный "китаец", работавший на частоте порядка 190 килогерц. Но как бы не была высока производительность выбранного микроконтроллера на этой частоте возможен лишь 9-разрядный ШИМ в турбо-режиме timer/channel:
+
+TCC2/WO[0]: PA00, PA12, PA16
+
+TCC2/WO[1]: PA01, PA13, PA17
+
+Попытка использовать другой, не помню какой таймер, имела печальный конец - это оказался таймер, задействованный в USB-интерфейсе... а SWD отказался восстанавливать загрузчик - так и лежит исправный, но в отказе работать. Впрочем, 9 разрядов оказалось вполне достаточно.
+
+Инициализация таймера:
+```c++
+#include "SAMD21turboPWM.h"
+
+TurboPWM pwm;
+  // Параметры настройки таймера T2
+constexpr bool                    pwm_turbo       = true;   // turbo on/off
+constexpr unsigned int            pwm_tccdiv_out  = 1;      // делитель для таймера 2 (1,2,4,8,16,64,256,1024)
+constexpr unsigned long long int  pwm_steps_out   = 0x01FF; // разрешение для таймера 2 (2 to counter_size)
+
+class TurboPWM {
+  public:
+    void setClockDivider(unsigned int GCLKDiv, bool turbo);
+    int timer(unsigned int timernumber, unsigned int TCCDiv, unsigned long long int steps, bool fastPWM);
+    int analogWrite(int pin, unsigned int dutyCycle);
+    int enable(unsigned int timerNumber, bool enabled);
+    float frequency(unsigned int timerNumber);
+  private:
+    unsigned int _GCLKDiv = 1;                // Main clock divider: 1 to 255 for both TCC0 and TCC1
+    bool _turbo = false;                      // False for 48MHz clock, true for 96MHz clock
+    const unsigned int _maxDutyCycle = 1000;  // The maximum duty cycle number; duty cycle will be (dutyCycle / _maxDutyCycle) * 100%
+};
+
+void initPwm()
+{
+  pwm.setClockDivider(1, pwm_turbo);           // Input clock is divided by 1 and sent to Generic Clock, Turbo is On/Off
+  pwm.timer(2, pwm_tccdiv_out,  pwm_steps_out,  true);  // T2, divider, resolution (подстройка частоты), single-slope PWM
+  pwm.enable(2, false);
+}
+```
+[^](#menu)
+
+## <p align="center"> Выбор ПИД-регулятора.<a name="fast_pid"></a>
+
+Исходя из повышенных требований к быстродействию системы выбор однозначно состоялся не в пользу решений с использованием математики с плавающей точкой. Только целочисленные вычисления могли дать приемлемый результат. Тем более, что наличие двух микроконтроллеров позволяло разместить работу с общепринятым форматом коэффициентов float на ESP32, там их преобразовать в целочисленные и отправить опять таки по протоколу, работающему только с целочисленными данными на SAMD21.
+
+Таким образом выбрана была библиотека [FastPid.h](https://github.com/mike-matera/FastPID), которую, естественно, пришлось попилить на две части. Под ESP32 преобразуются в целочисленные пропорциональный, интегральный и дифференциальный коэффициенты с проверками их на корректность, а исполнительная часть реализована под SAMD21. Скажете - как это сложно, вот у Кулона-912 нет никаких коэффициентов, и ничего, работает. Что тут ответить... Видишь сусликов? - Нет, не вижу. - Вот и я не вижу, а они есть. В роли "сусликов" резервные позиции для конденсаторов, которые приходится подбирать в случае необходимости при заводской регулировке. Согласен, на потоке где позиции закрываются в точном соответствии с документацией, другое дело для самосборщиков. По мне так лучше кнопочками...
+
+В указанной библиотеке фиксированную частоту 10 герц заменил на 200 герц, соответственно нашим потребностям.
+
+Для облегчения сего процесса было разработано тестовое ПО для подбора коэффициентов, подключая различные виду нагрузок - от резистора до батарей разной емкости и технологий. С возможностью сохранения результатов в виде профилей. Выяснилось, что для управления по току и напряжению коэффициенты разные - к этому был готов.
+
+По аналогии с аппаратным решением TL494 в рабочей версии управление по току и напряжению объединены в один режим - кто кого перетянет (в TL494 там проводное ИЛИ):
+
+```c++
+ // Запуск и выбор регулятора производится выбором pidMode: MODE_OFF, MODE_V, MODE_I, MODE_D, MODE_AUTO_V.
+void regulation(short fbV, short fbI)
+{
+  switch ( pidMode )
+  {
+    case MODE_OFF:  doModeOff();       break;   // Выход из регулирования с отключением всего
+    case MODE_V:    doModeV(fbV);      break;   // регулирование по напряжению 
+    case MODE_I:    doModeI(fbI);      break;   // регулирование по току заряда
+    case MODE_D:    doModeD(fbI);      break;   // регулирование по току разряда
+    case MODE_AUTO_V:
+      if(fbI < setpoint[MODE_I])                // если ток менее заданного, но не разряд))
+      {
+        doModeV(fbV);
+      }
+      else    // Иначе перейти к регулированию по току.
+      {
+        saveState(MODE_V);                      // Сохранить регистры регулятора
+        restoreState(MODE_I);                   // Перейти к регулированию по току
+        PidPwm.setCoefficients( kP[MODE_I], kI[MODE_I], kD[MODE_I] );
+        pidMode = MODE_AUTO_I;
+      }
+      break; //case MODE_AUTO_V
+
+    case MODE_AUTO_I:
+      if(fbV <= setpoint[MODE_V])               // Регулировать ток, если напряжение не выше заданного.
+      {
+        doModeI(fbI);
+      }
+      else                                      // Иначе перейти к регулированию по напряжению
+      {
+        saveState(MODE_I);
+        restoreState(MODE_V);
+        PidPwm.setCoefficients( kP[MODE_V], kI[MODE_V], kD[MODE_V] );
+        pidMode = MODE_AUTO_V;
+      }
+      break;  //case MODE_AUTO_I
+
+    default:;
+  } //switch(pidMode)
+```
+где в сокращенном виде (изменения регистра состояния не приводятся)
+
+```c++
+void doModeOff()
+{
+  swPinOff();                       // отключить от выходных клемм
+  writePwmOut(0x0000);              // преобразователь выключить
+  dacWrite10bit(0);
+}
+
+void doModeV(short fbV)
+{
+  swPinOn();                        // подключение к силовым клеммам
+  writePwmOut(PidPwm.step(setpoint[MODE_V], fbV));
+}
+
+void doModeI(short fbI)
+{
+  swPinOn();                        // коммутатор включен
+  writePwmOut(PidPwm.step(setpoint[MODE_I], fbI));
+}
+
+void doModeD(short fbI)
+{
+  swPinOn();                        // коммутатор включен
+  dacWrite10bit(PidDac.step(setpoint[MODE_D], -fbI));
+}
+```
+Особо следует остановиться на сохранении и восстановлении регистров состояния регулятора при переходах с целью получения неразрывной функции регулирования:
+
+```c++
+// Сохранение и восстановление регистров регулятора для корректного перехода
+void saveState( int mode )
+{  
+  switch (mode)
+  {
+    case MODE_V:
+      sLastSpU  = PidPwm.getLastSp();
+      sLastErrU = PidPwm.getLastErr();
+      break;
+
+    case MODE_I: 
+      sLastSpI  = PidPwm.getLastSp();
+      sLastErrI = PidPwm.getLastErr();
+      break;
+
+    default: break;
+  }
+}
+
+void restoreState( int mode )
+{
+  switch (mode)
+  {
+    case MODE_V:
+      PidPwm.setLastSp( sLastSpU );
+      PidPwm.setLastErr( sLastErrU );
+      break;
+
+    case MODE_I: 
+      PidPwm.setLastSp( sLastSpI );
+      PidPwm.setLastErr( sLastErrI );
+      break;
+
+    default: break;
+  }
+}
+```
+[^](#menu)
+
+## <p align="center"> Подбор параметров.<a name="par_pid"></a> 
+
+Подбор коэффициентов ПИД-регулятора, действительно, то ещё шаманство. На картинке это выглядит весьма привлекательно:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/PID_Compensation_Animated.gif)
+
+Да и метод Циглера-Никольса вполне рабочий. Но какой у нас выбор? Подбирать емкости в петле обратной связи (фильтры измерителей, фильтр усилителя ошибки, а фильтр на выходе DC-DC?), причем на все случаи жизни, или иметь настраиваемый (подстраиваемый) под реализованное схемное решение, результат "улучшения" или нехилый выбор заряжаемых банок? 
+
+А вот с тем, что проиллюстрировано ниже при внешней привлекательности, предстоит ещё разбираться и разбираться - суслик вроде бы виден:
+
+При токе в нагрузке менее 150 мА, когда может быть избыток генерируемой мощности:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/cc_100mA.png)
+
+пид-регулятор периодически отключает преобразователь. Точнее отключает функция из другой библиотеки - SAMD21turboPWM.h, а ПИД-регулятор аккуратно включает ШИМ при очередном вызове. И ШИМ при этом 50/50, что соответствует отдаче половины максимальной мощности, и в некоторых случаях быстренько приводится к тому, что был перед отключением... Ток в режиме CC и напряжение в режиме CV поддерживаются в заданных параметрах плюс-минус менее 5 МЗР, работа преобразователя устойчива:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/50_50.png)
+
+через 5 миллисекунд генерация возобновляется:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/off_5ms.png)
+
+Словом, ведет себя как регулятор 4016, снижая частоту ШИМ в такой же ситуации с нагрузкой. Разница в том, что здесь как бы два ШИМа, но дроссель работает на родной частоте 190 килогерц и это очень хорошо. Надобность в подключении балластного резистора, на котором рассеивается с таким трудом добытая мощность в бесполезное тепло, отпадает. 
+
+Параметр "The maximum duty cycle number" = 1000 каким-то образом влияет на такое поведение регулятора, 
+"а коли доктор сыт, так и больному легче" (доктор, "Формула любви").
+
+Холостой ход и выход в режим CV:
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/samd/docs/img/idling.png)
+
+Никаких специальных настроек - в режиме холостого хода на клеммах поддерживалось напряжение в пределах 13.0-14.0 вольт при установленном 13.5 уровне. Выброс напряжения не превышал четверти вольта. Подключение батареи не сопровождалось искрением, переход в режим поддержания напряжения прошел штатно.
+
+И, наконец, вишенка на торте - задействованные аналоговые входы измерителей тока и напряжения не случайно оказались именно теми же, к которым подключены встроенные аналоговые компараторы SAMD21. Не ожидали такого подарка? Я тоже. Но об этом потом. "Мама, ты помнишь мои новые жёлтые ботинки? Но об этом потом..." - Из письма молодого специалиста, КВН 60-х.
+[^](#menu)
+***
+![moro logo](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/moro_logo.jpg)
+
+***
+## <p align="center">7. Документация.<a name="docs"></a>
+
+## <p align="center"> Плата управления. Схема.<a name="sch1"></a>
+![Лист 1](https://github.com/olmoro/MKlon3.5/blob/main/documents/cpu/sch/cpu3.5v5_1.pdf)
+
+![Лист 2](https://github.com/olmoro/MKlon3.5/blob/main/documents/cpu/sch/cpu3.5v5_2.pdf)
+
+## <p align="center"> Силовая плата. Схема.<a name="sch2"></a>
+![Лист 1](https://github.com/olmoro/MKlon3.5/blob/main/documents/pow/sch/pow3.5v5.pdf)
+
+***
+## <p align="center">8.Полезные ссылки<a name="useful_links"></a>
+- [OSS](https://ru.wikipedia.org/wiki/%D0%9E%D1%82%D0%BA%D1%80%D1%8B%D1%82%D0%BE%D0%B5_%D0%BF%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D0%BD%D0%BE%D0%B5_%D0%BE%D0%B1%D0%B5%D1%81%D0%BF%D0%B5%D1%87%D0%B5%D0%BD%D0%B8%D0%B5)
+- [Протокол обмена](http://leoniv.diod.club/articles/wake/wake.html)
+- [Проекты на ESP32](https://randomnerdtutorials.com/projects-esp32/)
+- [Как создать проект](https://dzen.ru/media/kotyara12/sozdanie-platformio--espidf-proekta-i-nastroika-platformioini-6324c68fb3d4c87d20ee80a6)
+- [Как строятся графики](https://www.chartjs.org/)
+- [Использование памяти в ESP32](https://dzen.ru/media/kotyara12/ispolzovanie-pamiati-v-esp32-63294a246a97da509e279eab)
+[^](#menu)
+***
+## <p align="center">9. About Me<a name="about"></a>
+🚀 I'm a full stack developer urk2t@yandex.ru
+[^](#menu)
