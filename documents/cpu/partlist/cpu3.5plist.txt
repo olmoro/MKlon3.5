@@ -77,7 +77,7 @@ SV2                        FE05-2W           FE05-2W           con-lsta_moro    
 SV3                        FE05-2W           FE05-2W           con-lsta_moro       2
 
 U3       B0505S-1W         HLK-1D1212        HLK-1D1212        wx-d21              2
-U4       B0505S-1W         HLK-1D1212        HLK-1D1212        wx-d21              2
+U4       B0515S-1W         HLK-1D1212        HLK-1D1212        wx-d21              2
 
 VD1      LED5MMRGB_90      LED5MMRGB_90      LED5MMRGB_90      MKlon               1
 VD2      1N4148            DIODE-MINIMELF    MINIMELF          diode               1
