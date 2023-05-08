@@ -197,6 +197,7 @@ VD6 следует выбирать с минимальным обратным �
 ***
 ## <p align="center"> Конструктивное исполнение.<a name="design"></a>
 
+![](https://github.com/olmoro/MKlon3.5/blob/main/documents/full/img/design.png)
 
 
 
