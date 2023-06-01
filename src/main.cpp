@@ -48,6 +48,10 @@ void driverTask  ( void * );
 //  по максимальному времени монопольного захвата ядра (13мс).
 void setup()
 {
+    // Use serial port
+  Serial.begin(115200);
+  while(!Serial) {}
+  
   Display    = new MDisplay();
   Board      = new MBoard();
   Tools      = new MTools(Board, Display);
